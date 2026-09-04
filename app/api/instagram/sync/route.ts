@@ -1,19 +1,14 @@
 import { getDashboard, mergeInstagramReels } from "@/lib/dashboard";
+import { fetchAllMedia, mapWithConcurrency } from "@/lib/instagram";
 import type { MetricPoint, Reel } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+// Walking the whole library takes longer than a single page did.
+export const maxDuration = 60;
 
-type InstagramMedia = {
-  id: string;
-  caption?: string;
-  timestamp: string;
-  media_url?: string;
-  thumbnail_url?: string;
-  permalink?: string;
-  media_type?: string;
-  like_count?: number;
-  comments_count?: number;
-};
+const pageSize = Number(process.env.INSTAGRAM_PAGE_SIZE) || 100;
+const maxReels = Number(process.env.INSTAGRAM_MAX_REELS) || 300;
+const insightConcurrency = Number(process.env.INSTAGRAM_INSIGHT_CONCURRENCY) || 6;
 
 function compactTitle(caption?: string) {
   const firstLine = caption?.split("\n")[0]?.replace(/#\S+/g, "").trim();
@@ -62,48 +57,53 @@ export async function POST() {
     "fields",
     "id,caption,timestamp,media_url,thumbnail_url,permalink,media_type,like_count,comments_count",
   );
-  mediaUrl.searchParams.set("limit", "50");
+  mediaUrl.searchParams.set("limit", String(pageSize));
   mediaUrl.searchParams.set("access_token", accessToken);
 
-  const response = await fetch(mediaUrl);
-  if (!response.ok) {
-    return Response.json({ error: "Instagram did not accept the sync request." }, { status: response.status });
+  let media;
+  let truncated = false;
+  try {
+    const fetched = await fetchAllMedia({ firstUrl: mediaUrl.toString(), maxItems: maxReels });
+    media = fetched.media;
+    truncated = fetched.truncated;
+  } catch {
+    return Response.json({ error: "Instagram did not accept the sync request." }, { status: 502 });
   }
 
-  const payload = (await response.json()) as { data?: InstagramMedia[] };
   const dashboard = await getDashboard();
   const existingById = new Map(dashboard.reels.map((reel) => [reel.id, reel]));
 
-  const reels = await Promise.all(
-    (payload.data ?? [])
-      .filter((media) => media.media_type === "VIDEO")
-      .map(async (media): Promise<Reel> => {
-        const insight = await loadInsightValues(media.id, accessToken, apiBaseUrl);
-        const point: MetricPoint = {
-          date: dayLabel(new Date().toISOString()),
-          views: insight.views ?? 0,
-          reach: insight.reach ?? 0,
-          likes: media.like_count ?? 0,
-          comments: media.comments_count ?? 0,
-          shares: insight.shares ?? 0,
-          saves: insight.saved ?? 0,
-        };
-        const previous = existingById.get(media.id);
-        const metrics = previous?.metrics ?? [];
-        const withoutToday = metrics.filter((snapshot) => snapshot.date !== point.date);
+  const reels = await mapWithConcurrency(
+    media.filter((item) => item.media_type === "VIDEO"),
+    insightConcurrency,
+    async (item): Promise<Reel> => {
+      const insight = await loadInsightValues(item.id, accessToken, apiBaseUrl);
+      const point: MetricPoint = {
+        date: dayLabel(new Date().toISOString()),
+        views: insight.views ?? 0,
+        reach: insight.reach ?? 0,
+        likes: item.like_count ?? 0,
+        comments: item.comments_count ?? 0,
+        shares: insight.shares ?? 0,
+        saves: insight.saved ?? 0,
+      };
+      const previous = existingById.get(item.id);
+      const metrics = previous?.metrics ?? [];
+      const withoutToday = metrics.filter((snapshot) => snapshot.date !== point.date);
 
-        return {
-          id: media.id,
-          title: compactTitle(media.caption),
-          caption: media.caption ?? "",
-          postedAt: media.timestamp,
-          thumbnail: media.thumbnail_url ?? media.media_url ?? "",
-          permalink: media.permalink,
-          source: "instagram",
-          metrics: [...withoutToday, point],
-        };
-      }),
+      return {
+        id: item.id,
+        title: compactTitle(item.caption),
+        caption: item.caption ?? "",
+        postedAt: item.timestamp,
+        thumbnail: item.thumbnail_url ?? item.media_url ?? "",
+        permalink: item.permalink,
+        source: "instagram",
+        metrics: [...withoutToday, point],
+      };
+    },
   );
 
-  return Response.json(await mergeInstagramReels(reels));
+  const updated = await mergeInstagramReels(reels);
+  return Response.json({ ...updated, syncedReels: reels.length, truncated });
 }
