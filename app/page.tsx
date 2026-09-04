@@ -10,6 +10,7 @@ type CalendarStatus = {
   reason?: string;
   message?: string;
   durableStorage?: boolean;
+  storageError?: string;
 };
 
 const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -246,8 +247,9 @@ export default function Home() {
 
         {calendar.durableStorage === false && (
           <div className="notice notice-warn" role="status">
-            Connections are held in server memory only, so Google Calendar can drop out between requests. Add
-            UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep it connected.
+            {calendar.storageError
+              ? `Redis is configured but did not answer (${calendar.storageError}), so connections fall back to server memory and drop out between requests. UPSTASH_REDIS_REST_URL must be the https:// REST endpoint, not a rediss:// connection string.`
+              : "Connections are held in server memory only, so Google Calendar can drop out between requests. Add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, or the KV_REST_API_URL and KV_REST_API_TOKEN pair, to keep it connected."}
           </div>
         )}
 

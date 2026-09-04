@@ -2,9 +2,21 @@ import { Redis } from "@upstash/redis";
 
 const memoryStore = new Map<string, unknown>();
 
+/** First name that holds a non-blank value. */
+function envValue(...names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  return null;
+}
+
 function redisConfig() {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+  // Vercel's Upstash integration creates the KV_REST_API_* pair. A manually added
+  // UPSTASH_REDIS_REST_* pair left blank must not shadow it, which is why these are
+  // resolved by first non-empty value rather than by ?? (an empty string is not nullish).
+  const url = envValue("UPSTASH_REDIS_REST_URL", "KV_REST_API_URL");
+  const token = envValue("UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_TOKEN");
   return url && token ? { url, token } : null;
 }
 
@@ -20,6 +32,29 @@ function redis() {
  */
 export function hasDurableStorage() {
   return redisConfig() !== null;
+}
+
+export type StorageHealth = { configured: boolean; reachable: boolean; error?: string };
+
+/**
+ * Presence of the environment variables is not proof that Redis works: a REST
+ * URL pointing at the wrong host still reads as configured, and readStored
+ * then falls back to memory without saying so. Ask Redis directly.
+ */
+export async function checkStorage(): Promise<StorageHealth> {
+  const client = redis();
+  if (!client) return { configured: false, reachable: false };
+
+  try {
+    await client.ping();
+    return { configured: true, reachable: true };
+  } catch (error) {
+    return {
+      configured: true,
+      reachable: false,
+      error: error instanceof Error ? error.message : "Redis did not answer.",
+    };
+  }
 }
 
 export async function readStored<T>(key: string, fallback: T): Promise<T> {

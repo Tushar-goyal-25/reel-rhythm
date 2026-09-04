@@ -1,5 +1,5 @@
 import { getGoogleTokens, saveGoogleTokens } from "./dashboard";
-import { hasDurableStorage } from "./storage";
+import { checkStorage, hasDurableStorage } from "./storage";
 import type { GoogleTokens } from "./types";
 
 const googleTokenUrl = "https://oauth2.googleapis.com/token";
@@ -183,14 +183,16 @@ export async function createGoogleCalendarEvent(title: string, startsAt: string)
 }
 
 export async function getUpcomingGoogleEvents() {
-  const access = await resolveGoogleAccess();
-  const durableStorage = hasDurableStorage();
+  const [access, storage] = await Promise.all([resolveGoogleAccess(), checkStorage()]);
+  const durableStorage = storage.configured && storage.reachable;
+  const storageError = storage.configured && !storage.reachable ? storage.error : undefined;
   if (!access.accessToken) {
     return {
       connected: false,
       reason: access.reason,
       message: connectionMessage(access.reason, access.detail),
       durableStorage,
+      storageError,
       events: [],
     };
   }
@@ -209,6 +211,7 @@ export async function getUpcomingGoogleEvents() {
       reason: "api-refused" as const,
       message: `Google Calendar refused the request: ${await googleErrorText(response)}`,
       durableStorage,
+      storageError,
       events: [],
     };
   }
@@ -219,6 +222,7 @@ export async function getUpcomingGoogleEvents() {
     reason: "connected" as const,
     message: connectionMessage("connected"),
     durableStorage,
+    storageError,
     events: (data.items ?? []).map((event) => ({
       id: event.id,
       title: event.summary ?? "Untitled event",
