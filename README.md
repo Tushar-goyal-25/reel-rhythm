@@ -102,18 +102,77 @@ connected. Development runs without a password; production requires one.
 
 `.env.example` documents the rest, including the sync's tuning knobs.
 
-### Connecting Instagram
+### Getting the credentials
 
-Add the *Manage messaging & content on Instagram* use case to a Meta app, generate an
-Instagram user access token, and set `INSTAGRAM_ACCESS_TOKEN`. The token stays server-side;
-the browser never sees it. Meta's older Facebook Page-token route still works via
-`INSTAGRAM_API_MODE=facebook-login`.
+Four things to obtain. Budget half an hour the first time; most of it is account admin
+rather than anything technical.
 
-### Connecting Google Calendar
+#### 1. A password
 
-Create an OAuth web client with the Calendar API enabled and add
-`{your-domain}/api/google/callback` as an authorised redirect URI. The app requests only
-`calendar.events`. Tokens are stored server-side and refreshed automatically.
+Any long random string. You paste it once and the browser holds the session for 30 days.
+
+```bash
+openssl rand -base64 24
+```
+
+Set it as `APP_PASSWORD`. Production refuses to start without one.
+
+#### 2. Upstash Redis
+
+The simplest route is through Vercel: open your project, go to **Storage**, and add
+**Upstash Redis** from the marketplace. It writes `KV_REST_API_URL` and
+`KV_REST_API_TOKEN` into your environment for you, and the app reads those.
+
+To create one directly instead, sign up at [console.upstash.com](https://console.upstash.com),
+create a Redis database, and copy the **REST** URL and token from the database page into
+`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. Take the `https://` REST endpoint,
+not the `rediss://` connection string — the client speaks Upstash's REST protocol, and the
+TCP URL will not work.
+
+#### 3. Instagram access token
+
+Your Instagram account must be **Professional** (Business or Creator). Switch it in the
+Instagram app under *Settings → Account type and tools*. Personal accounts have no API
+access at all.
+
+1. Go to [developers.facebook.com](https://developers.facebook.com) and create an app.
+2. Add the **Instagram** product, then open **Instagram → API setup with Instagram
+   business login** in the left menu.
+3. Add your Instagram account, then press **Generate token** beside it and complete the
+   Instagram login.
+4. Copy the token into `INSTAGRAM_ACCESS_TOKEN` and leave
+   `INSTAGRAM_API_MODE=instagram-login`.
+
+> **These tokens last 60 days.** Tokens generated in the App Dashboard are long-lived but
+> not permanent, so syncing will start failing roughly two months after setup. Regenerate
+> the token and update the variable when it does. (Tokens obtained through the login flow
+> rather than the dashboard last only an hour, so use the dashboard button.)
+
+Meta's older Facebook Page-token route still works: set
+`INSTAGRAM_API_MODE=facebook-login` and add `INSTAGRAM_BUSINESS_ACCOUNT_ID`.
+
+#### 4. Google OAuth client
+
+1. In [console.cloud.google.com](https://console.cloud.google.com), create a project.
+2. **APIs & Services → Library**, search for **Google Calendar API**, and enable it.
+3. **APIs & Services → OAuth consent screen**: choose **External**, fill in the app name
+   and your support email, and add your own Google account under **Test users**.
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type
+   **Web application**. Under *Authorised redirect URIs* add both:
+   - `http://localhost:3000/api/google/callback`
+   - `https://your-domain/api/google/callback`
+5. Copy the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+> **Set the publishing status to "In production", or the connection breaks weekly.** While
+> an external app's status is **Testing**, Google issues refresh tokens that expire after
+> **7 days**, so the calendar silently disconnects every week and has to be reconnected by
+> hand. The exemption to that rule covers only the basic profile scopes, not
+> `calendar.events`. Publishing the app removes the expiry; an unverified app still shows a
+> "Google hasn't verified this app" screen you can click past, which is fine for a tool
+> only you sign in to.
+
+The app requests `calendar.events` and nothing else. Tokens are stored server-side and
+refreshed automatically.
 
 ## Deploying
 
