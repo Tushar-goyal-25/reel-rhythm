@@ -19,12 +19,27 @@ function dayLabel(timestamp: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(timestamp));
 }
 
-async function loadInsightValues(mediaId: string, accessToken: string, apiBaseUrl: string) {
+/**
+ * Null when the numbers could not be read. Returning zeros instead would write
+ * a snapshot of nothing into the reel's history as though it were measured, and
+ * replace the real reading taken earlier the same day.
+ */
+async function loadInsightValues(
+  mediaId: string,
+  accessToken: string,
+  apiBaseUrl: string,
+): Promise<Record<string, number> | null> {
   const url = new URL(`${apiBaseUrl}/${mediaId}/insights`);
   url.searchParams.set("metric", "views,reach,saved,shares");
   url.searchParams.set("access_token", accessToken);
-  const response = await fetch(url);
-  if (!response.ok) return {} as Record<string, number>;
+
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
 
   const payload = (await response.json()) as {
     data?: Array<{ name: string; values?: Array<{ value?: number }>; total_value?: { value?: number } }>;
@@ -72,24 +87,33 @@ export async function POST() {
 
   const dashboard = await getDashboard();
   const existingById = new Map(dashboard.reels.map((reel) => [reel.id, reel]));
+  let missingInsights = 0;
 
   const reels = await mapWithConcurrency(
     media.filter((item) => item.media_type === "VIDEO"),
     insightConcurrency,
     async (item): Promise<Reel> => {
       const insight = await loadInsightValues(item.id, accessToken, apiBaseUrl);
-      const point: MetricPoint = {
-        date: dayLabel(new Date().toISOString()),
-        views: insight.views ?? 0,
-        reach: insight.reach ?? 0,
-        likes: item.like_count ?? 0,
-        comments: item.comments_count ?? 0,
-        shares: insight.shares ?? 0,
-        saves: insight.saved ?? 0,
-      };
       const previous = existingById.get(item.id);
       const metrics = previous?.metrics ?? [];
-      const withoutToday = metrics.filter((snapshot) => snapshot.date !== point.date);
+
+      // Without insights the reel still refreshes its caption and thumbnail, it
+      // just keeps the history it already had rather than gaining a false point.
+      let nextMetrics = metrics;
+      if (insight) {
+        const point: MetricPoint = {
+          date: dayLabel(new Date().toISOString()),
+          views: insight.views ?? 0,
+          reach: insight.reach ?? 0,
+          likes: item.like_count ?? 0,
+          comments: item.comments_count ?? 0,
+          shares: insight.shares ?? 0,
+          saves: insight.saved ?? 0,
+        };
+        nextMetrics = [...metrics.filter((snapshot) => snapshot.date !== point.date), point];
+      } else {
+        missingInsights += 1;
+      }
 
       return {
         id: item.id,
@@ -99,11 +123,11 @@ export async function POST() {
         thumbnail: item.thumbnail_url ?? item.media_url ?? "",
         permalink: item.permalink,
         source: "instagram",
-        metrics: [...withoutToday, point],
+        metrics: nextMetrics,
       };
     },
   );
 
   const updated = await mergeInstagramReels(reels);
-  return Response.json({ ...updated, syncedReels: reels.length, truncated });
+  return Response.json({ ...updated, syncedReels: reels.length, truncated, missingInsights });
 }

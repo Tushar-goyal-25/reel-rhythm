@@ -1,8 +1,15 @@
 import { getGoogleTokens, saveGoogleTokens } from "./dashboard";
 import { checkStorage, hasDurableStorage } from "./storage";
-import type { GoogleTokens } from "./types";
+import type { Deadline, GoogleTokens } from "./types";
 
 const googleTokenUrl = "https://oauth2.googleapis.com/token";
+
+/** Prefix the app puts on the events it creates, stripped when reading them back. */
+export const uploadEventPrefix = "Upload reel · ";
+
+function calendarId() {
+  return process.env.GOOGLE_CALENDAR_ID || "primary";
+}
 
 /** Why the Google Calendar connection is, or is not, usable right now. */
 export type GoogleConnectionReason =
@@ -154,14 +161,13 @@ export async function createGoogleCalendarEvent(title: string, startsAt: Date, t
 
   const starts = startsAt;
   const ends = new Date(starts.getTime() + 30 * 60 * 1000);
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId())}/events`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${access.accessToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        summary: `Upload reel · ${title}`,
+        summary: `${uploadEventPrefix}${title}`,
         description: "Created by Reel Rhythm.",
         // The instant is already unambiguous; the zone makes Google display it
         // in the creator's own reckoning rather than the calendar default.
@@ -184,6 +190,70 @@ export async function createGoogleCalendarEvent(title: string, startsAt: Date, t
   return (await response.json()) as { id: string; htmlLink?: string };
 }
 
+type CalendarEvent = { id: string; summary?: string; status?: string; start?: { dateTime?: string; date?: string } };
+
+/**
+ * "missing" only for an event Google positively reports as gone. Any other
+ * failure is "unknown" so a rate limit or an outage can never be mistaken for
+ * a deletion and quietly drop a deadline.
+ */
+async function readEvent(accessToken: string, eventId: string): Promise<CalendarEvent | "missing" | "unknown"> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId())}/events/${encodeURIComponent(eventId)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+  } catch {
+    return "unknown";
+  }
+
+  if (response.status === 404 || response.status === 410) return "missing";
+  if (!response.ok) return "unknown";
+
+  const event = (await response.json()) as CalendarEvent;
+  return event.status === "cancelled" ? "missing" : event;
+}
+
+/**
+ * Google owns these events once created, so an edit made there wins. Deadlines
+ * the app never pushed to a calendar are left alone.
+ */
+export async function reconcileDeadlines(deadlines: Deadline[]): Promise<{ deadlines: Deadline[]; changed: boolean }> {
+  const access = await resolveGoogleAccess();
+  if (!access.accessToken) return { deadlines, changed: false };
+
+  let changed = false;
+  const reconciled: Deadline[] = [];
+
+  for (const deadline of deadlines) {
+    if (!deadline.calendarEventId) {
+      reconciled.push(deadline);
+      continue;
+    }
+
+    const event = await readEvent(access.accessToken, deadline.calendarEventId);
+    if (event === "missing") {
+      changed = true;
+      continue;
+    }
+    if (event === "unknown") {
+      reconciled.push(deadline);
+      continue;
+    }
+
+    const summary = event.summary ?? deadline.title;
+    const title = summary.startsWith(uploadEventPrefix) ? summary.slice(uploadEventPrefix.length) : summary;
+    const rawStart = event.start?.dateTime ?? event.start?.date;
+    const startsAt = rawStart ? new Date(rawStart).toISOString() : deadline.startsAt;
+
+    if (title !== deadline.title || startsAt !== deadline.startsAt) changed = true;
+    reconciled.push({ ...deadline, title, startsAt });
+  }
+
+  return { deadlines: reconciled, changed };
+}
+
 export async function getUpcomingGoogleEvents() {
   const [access, storage] = await Promise.all([resolveGoogleAccess(), checkStorage()]);
   const durableStorage = storage.configured && storage.reachable;
@@ -199,8 +269,7 @@ export async function getUpcomingGoogleEvents() {
     };
   }
 
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
-  const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
+  const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId())}/events`);
   url.searchParams.set("timeMin", new Date().toISOString());
   url.searchParams.set("singleEvents", "true");
   url.searchParams.set("orderBy", "startTime");

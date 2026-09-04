@@ -11,6 +11,8 @@ type CalendarStatus = {
   message?: string;
   durableStorage?: boolean;
   storageError?: string;
+  /** Present when reconciling against Google changed the stored deadlines. */
+  dashboard?: Dashboard;
 };
 
 const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -119,9 +121,11 @@ export default function Home() {
   useEffect(() => {
     Promise.all([fetch("/api/dashboard").then((response) => response.json()), fetch("/api/calendar/events").then((response) => response.json())])
       .then(([data, status]) => {
-        setDashboard(data as Dashboard);
-        setSelectedId((data as Dashboard).reels[0]?.id ?? null);
-        setCalendar(status as CalendarStatus);
+        const calendarStatus = status as CalendarStatus;
+        const dashboardData = calendarStatus.dashboard ?? (data as Dashboard);
+        setDashboard(dashboardData);
+        setSelectedId(dashboardData.reels[0]?.id ?? null);
+        setCalendar(calendarStatus);
       })
       .catch(() => setNotice("The tracker could not load. Refresh and try again."));
   }, []);
@@ -149,10 +153,17 @@ export default function Home() {
     .filter((deadline) => new Date(deadline.startsAt) >= new Date())
     .sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt))[0];
 
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.href = "/login";
+  }
+
   async function refreshCalendarStatus() {
     try {
       const response = await fetch("/api/calendar/events");
-      setCalendar((await response.json()) as CalendarStatus);
+      const status = (await response.json()) as CalendarStatus;
+      if (status.dashboard) setDashboard(status.dashboard);
+      setCalendar(status);
     } catch {
       setCalendar({ connected: false });
     }
@@ -256,6 +267,7 @@ export default function Home() {
           <span className="sync-dot" />
           <div><small>Instagram</small><strong>{syncLabel(dashboard.lastSyncedAt)}</strong></div>
         </div>
+        <button className="text-button sign-out" onClick={signOut}>Sign out</button>
       </aside>
 
       <section className="workspace">
