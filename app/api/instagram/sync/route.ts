@@ -24,8 +24,8 @@ function dayLabel(timestamp: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(timestamp));
 }
 
-async function loadInsightValues(mediaId: string, accessToken: string, graphVersion: string) {
-  const url = new URL(`https://graph.facebook.com/${graphVersion}/${mediaId}/insights`);
+async function loadInsightValues(mediaId: string, accessToken: string, apiBaseUrl: string) {
+  const url = new URL(`${apiBaseUrl}/${mediaId}/insights`);
   url.searchParams.set("metric", "views,reach,saved,shares");
   url.searchParams.set("access_token", accessToken);
   const response = await fetch(url);
@@ -45,15 +45,19 @@ async function loadInsightValues(mediaId: string, accessToken: string, graphVers
 export async function POST() {
   const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
   const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
-  if (!accessToken || !accountId) {
+  const apiMode = process.env.INSTAGRAM_API_MODE === "facebook-login" ? "facebook-login" : "instagram-login";
+  if (!accessToken || (apiMode === "facebook-login" && !accountId)) {
     return Response.json(
-      { error: "Add INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ACCOUNT_ID before syncing." },
+      { error: apiMode === "facebook-login" ? "Add INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ACCOUNT_ID before syncing." : "Add INSTAGRAM_ACCESS_TOKEN before syncing." },
       { status: 503 },
     );
   }
 
   const graphVersion = process.env.META_GRAPH_API_VERSION || "v24.0";
-  const mediaUrl = new URL(`https://graph.facebook.com/${graphVersion}/${accountId}/media`);
+  const apiBaseUrl = apiMode === "instagram-login"
+    ? `https://graph.instagram.com/${graphVersion}`
+    : `https://graph.facebook.com/${graphVersion}`;
+  const mediaUrl = new URL(apiMode === "instagram-login" ? `${apiBaseUrl}/me/media` : `${apiBaseUrl}/${accountId}/media`);
   mediaUrl.searchParams.set(
     "fields",
     "id,caption,timestamp,media_url,thumbnail_url,permalink,media_type,like_count,comments_count",
@@ -74,7 +78,7 @@ export async function POST() {
     (payload.data ?? [])
       .filter((media) => media.media_type === "VIDEO")
       .map(async (media): Promise<Reel> => {
-        const insight = await loadInsightValues(media.id, accessToken, graphVersion);
+        const insight = await loadInsightValues(media.id, accessToken, apiBaseUrl);
         const point: MetricPoint = {
           date: dayLabel(new Date().toISOString()),
           views: insight.views ?? 0,

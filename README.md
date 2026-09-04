@@ -18,12 +18,12 @@ Add an Upstash Redis integration from the Vercel Marketplace and copy `UPSTASH_R
 
 ## Connect Instagram
 
-1. In Meta for Developers, create an app with Instagram Graph API access.
-2. Use an Instagram professional account connected to a Facebook Page.
-3. Add the long-lived account token as `INSTAGRAM_ACCESS_TOKEN` and the Instagram business account id as `INSTAGRAM_BUSINESS_ACCOUNT_ID`.
+1. In Meta for Developers, add the **Manage messaging & content on Instagram** use case to your app.
+2. Use a Professional Creator or Business account, then generate an Instagram user access token from the Instagram API setup page in the app dashboard.
+3. Add that value as `INSTAGRAM_ACCESS_TOKEN` and retain `INSTAGRAM_API_MODE=instagram-login`.
 4. Click **Sync Instagram** in the app. Each sync imports video media and writes a fresh analytics snapshot, so the detail panel can show the change over days.
 
-The endpoint intentionally keeps the Instagram token server-side: `POST /api/instagram/sync`.
+The endpoint intentionally keeps the Instagram token server-side: `POST /api/instagram/sync`. The earlier Facebook Page-token route remains available by setting `INSTAGRAM_API_MODE=facebook-login` and adding `INSTAGRAM_BUSINESS_ACCOUNT_ID`.
 
 ## Connect Google Calendar
 
