@@ -42,6 +42,14 @@ function inputDateTime(value: Date) {
   return local.toISOString().slice(0, 16);
 }
 
+function browserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function calendarDays(month: Date) {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const startsOn = (first.getDay() + 6) % 7;
@@ -164,7 +172,11 @@ export default function Home() {
       const response = await fetch("/api/calendar/deadline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: form.get("title"), startsAt: form.get("startsAt") }),
+        body: JSON.stringify({
+          title: form.get("title"),
+          startsAt: form.get("startsAt"),
+          timeZone: browserTimeZone(),
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
@@ -188,7 +200,12 @@ export default function Home() {
       const response = await fetch("/api/dashboard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: form.get("title"), caption: form.get("caption"), postedAt: form.get("postedAt") }),
+        body: JSON.stringify({
+          title: form.get("title"),
+          caption: form.get("caption"),
+          postedAt: form.get("postedAt"),
+          timeZone: browserTimeZone(),
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);

@@ -146,13 +146,13 @@ export async function exchangeGoogleCode(code: string, redirectUri: string) {
   });
 }
 
-export async function createGoogleCalendarEvent(title: string, startsAt: string) {
+export async function createGoogleCalendarEvent(title: string, startsAt: Date, timeZone?: string) {
   const access = await resolveGoogleAccess();
   if (!access.accessToken) {
     throw new GoogleConnectionError(access.reason, connectionMessage(access.reason, access.detail));
   }
 
-  const starts = new Date(startsAt);
+  const starts = startsAt;
   const ends = new Date(starts.getTime() + 30 * 60 * 1000);
   const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
   const response = await fetch(
@@ -163,8 +163,10 @@ export async function createGoogleCalendarEvent(title: string, startsAt: string)
       body: JSON.stringify({
         summary: `Upload reel · ${title}`,
         description: "Created by Reel Rhythm.",
-        start: { dateTime: starts.toISOString() },
-        end: { dateTime: ends.toISOString() },
+        // The instant is already unambiguous; the zone makes Google display it
+        // in the creator's own reckoning rather than the calendar default.
+        start: { dateTime: starts.toISOString(), ...(timeZone ? { timeZone } : {}) },
+        end: { dateTime: ends.toISOString(), ...(timeZone ? { timeZone } : {}) },
         reminders: {
           useDefault: false,
           overrides: [
