@@ -13,6 +13,15 @@ function redis() {
   return config ? new Redis(config) : null;
 }
 
+/**
+ * Whether values survive beyond the current server process. Without Redis the
+ * fallback store is a module-level Map, so anything written by one serverless
+ * invocation is invisible to the next one.
+ */
+export function hasDurableStorage() {
+  return redisConfig() !== null;
+}
+
 export async function readStored<T>(key: string, fallback: T): Promise<T> {
   const client = redis();
   if (client) {

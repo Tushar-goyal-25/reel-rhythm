@@ -1,5 +1,5 @@
 import { addDeadline } from "@/lib/dashboard";
-import { createGoogleCalendarEvent } from "@/lib/google";
+import { GoogleConnectionError, createGoogleCalendarEvent } from "@/lib/google";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,12 @@ export async function POST(request: Request) {
     });
     return Response.json(dashboard, { status: 201 });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Could not add deadline." }, { status: 503 });
+    if (error instanceof GoogleConnectionError) {
+      return Response.json({ error: error.message, reason: error.reason, connected: false }, { status: 409 });
+    }
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Could not add deadline." },
+      { status: 503 },
+    );
   }
 }

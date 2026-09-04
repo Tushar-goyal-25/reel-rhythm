@@ -5,6 +5,13 @@ import type { Dashboard, Reel } from "@/lib/types";
 
 type PanelMode = "detail" | "deadline" | "manual";
 
+type CalendarStatus = {
+  connected: boolean;
+  reason?: string;
+  message?: string;
+  durableStorage?: boolean;
+};
+
 const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function dateKey(value: Date | string) {
@@ -86,14 +93,14 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendar, setCalendar] = useState<CalendarStatus>({ connected: false });
 
   useEffect(() => {
     Promise.all([fetch("/api/dashboard").then((response) => response.json()), fetch("/api/calendar/events").then((response) => response.json())])
-      .then(([data, calendar]) => {
+      .then(([data, status]) => {
         setDashboard(data as Dashboard);
         setSelectedId((data as Dashboard).reels[0]?.id ?? null);
-        setCalendarConnected(Boolean(calendar.connected));
+        setCalendar(status as CalendarStatus);
       })
       .catch(() => setNotice("The tracker could not load. Refresh and try again."));
   }, []);
@@ -120,6 +127,15 @@ export default function Home() {
   const nextDeadline = dashboard?.deadlines
     .filter((deadline) => new Date(deadline.startsAt) >= new Date())
     .sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt))[0];
+
+  async function refreshCalendarStatus() {
+    try {
+      const response = await fetch("/api/calendar/events");
+      setCalendar((await response.json()) as CalendarStatus);
+    } catch {
+      setCalendar({ connected: false });
+    }
+  }
 
   async function syncInstagram() {
     setIsSyncing(true);
@@ -156,6 +172,7 @@ export default function Home() {
       setNotice("Deadline added to your Google Calendar.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Deadline could not be saved.");
+      await refreshCalendarStatus();
     } finally {
       setIsSaving(false);
     }
@@ -227,6 +244,13 @@ export default function Home() {
 
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice(null)} aria-label="Dismiss message">×</button></div>}
 
+        {calendar.durableStorage === false && (
+          <div className="notice notice-warn" role="status">
+            Connections are held in server memory only, so Google Calendar can drop out between requests. Add
+            UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep it connected.
+          </div>
+        )}
+
         <section className="deadline-banner" id="integrations">
           <div className="deadline-time">
             <span>Next upload</span>
@@ -237,8 +261,12 @@ export default function Home() {
             <p>{nextDeadline ? "Protected time in your publishing calendar." : "A small deadline makes the next post easier to start."}</p>
           </div>
           <div className="deadline-actions">
-            {!calendarConnected && <button className="text-button" onClick={() => (window.location.href = "/api/google/connect")}>Connect Google Calendar <Arrow /></button>}
-            {calendarConnected && <span className="connected"><b>●</b> Google Calendar connected</span>}
+            {!calendar.connected && (
+              <button className="text-button" title={calendar.message} onClick={() => (window.location.href = "/api/google/connect")}>
+                {calendar.reason === "expired" || calendar.reason === "refresh-failed" || calendar.reason === "api-refused" ? "Reconnect Google Calendar" : "Connect Google Calendar"} <Arrow />
+              </button>
+            )}
+            {calendar.connected && <span className="connected"><b>●</b> Google Calendar connected</span>}
             <button className="outline-button" onClick={() => setPanelMode("deadline")}>Add deadline</button>
           </div>
         </section>
