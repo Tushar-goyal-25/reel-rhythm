@@ -83,8 +83,13 @@ const sampleDashboard: Dashboard = {
   ],
 };
 
+/** Null when nothing has ever been saved, which the sample data would otherwise hide. */
+export async function getStoredDashboard(): Promise<Dashboard | null> {
+  return readStored<Dashboard | null>(dashboardKey, null);
+}
+
 export async function getDashboard(): Promise<Dashboard> {
-  return readStored<Dashboard>(dashboardKey, sampleDashboard);
+  return (await getStoredDashboard()) ?? sampleDashboard;
 }
 
 export async function saveDashboard(dashboard: Dashboard): Promise<void> {
@@ -105,10 +110,23 @@ export async function addDeadline(deadline: Deadline): Promise<Dashboard> {
   return updated;
 }
 
-export async function replaceInstagramReels(reels: Reel[]): Promise<Dashboard> {
-  const dashboard = await getDashboard();
-  const nonInstagram = dashboard.reels.filter((reel) => reel.source !== "instagram");
-  const updated = { ...dashboard, reels: [...reels, ...nonInstagram], lastSyncedAt: new Date().toISOString() };
+/**
+ * Folds a sync into what is already stored, matching on Instagram's media id.
+ * A sync only ever returns the most recent page of media, so a reel missing
+ * from it has usually just aged out rather than been deleted, and dropping it
+ * would take its accumulated metric history with it.
+ */
+export async function mergeInstagramReels(reels: Reel[]): Promise<Dashboard> {
+  const stored = await getStoredDashboard();
+  const incoming = new Map(reels.map((reel) => [reel.id, reel]));
+  // Sample reels are placeholders, so only genuinely saved ones are retained.
+  const retained = (stored?.reels ?? []).filter((reel) => !incoming.has(reel.id));
+  const merged = [...reels, ...retained].sort((a, b) => +new Date(b.postedAt) - +new Date(a.postedAt));
+  const updated = {
+    ...(stored ?? sampleDashboard),
+    reels: merged,
+    lastSyncedAt: new Date().toISOString(),
+  };
   await saveDashboard(updated);
   return updated;
 }

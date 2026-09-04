@@ -23,6 +23,18 @@ function dateKey(value: Date | string) {
   return `${year}-${month}-${day}`;
 }
 
+function syncLabel(value?: string) {
+  if (!value) return "Not synced";
+  const synced = new Date(value);
+  if (Number.isNaN(synced.getTime())) return "Not synced";
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dateKey(synced) === dateKey(new Date())) return "Synced today";
+  if (dateKey(synced) === dateKey(yesterday)) return "Synced yesterday";
+  return `Synced ${new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(synced)}`;
+}
+
 function monthName(date: Date) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
 }
@@ -242,7 +254,7 @@ export default function Home() {
         </nav>
         <div className="sidebar-foot">
           <span className="sync-dot" />
-          <div><small>Instagram</small><strong>{dashboard.lastSyncedAt ? "Synced today" : "Not synced"}</strong></div>
+          <div><small>Instagram</small><strong>{syncLabel(dashboard.lastSyncedAt)}</strong></div>
         </div>
       </aside>
 

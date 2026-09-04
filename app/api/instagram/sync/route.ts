@@ -1,4 +1,4 @@
-import { getDashboard, replaceInstagramReels } from "@/lib/dashboard";
+import { getDashboard, mergeInstagramReels } from "@/lib/dashboard";
 import type { MetricPoint, Reel } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -105,5 +105,5 @@ export async function POST() {
       }),
   );
 
-  return Response.json(await replaceInstagramReels(reels));
+  return Response.json(await mergeInstagramReels(reels));
 }
