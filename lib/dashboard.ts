@@ -83,9 +83,33 @@ const sampleDashboard: Dashboard = {
   ],
 };
 
+/** What a write builds on when nothing has been saved yet. */
+const emptyDashboard: Dashboard = { reels: [], deadlines: [] };
+
+const sampleIds = new Set([
+  ...sampleDashboard.reels.map((reel) => reel.id),
+  ...sampleDashboard.deadlines.map((deadline) => deadline.id),
+]);
+
+/**
+ * The sample dashboard exists to fill an empty interface, so it must never be
+ * written back as though the user had entered it. Reading the stored value
+ * through this also clears placeholders saved by an earlier version, which
+ * showed up as deadlines nobody had added. Real entries carry a UUID, so no
+ * genuine record collides with these ids.
+ */
+function withoutSample(dashboard: Dashboard): Dashboard {
+  return {
+    ...dashboard,
+    reels: dashboard.reels.filter((reel) => !sampleIds.has(reel.id)),
+    deadlines: dashboard.deadlines.filter((deadline) => !sampleIds.has(deadline.id)),
+  };
+}
+
 /** Null when nothing has ever been saved, which the sample data would otherwise hide. */
 export async function getStoredDashboard(): Promise<Dashboard | null> {
-  return readStored<Dashboard | null>(dashboardKey, null);
+  const stored = await readStored<Dashboard | null>(dashboardKey, null);
+  return stored ? withoutSample(stored) : null;
 }
 
 export async function getDashboard(): Promise<Dashboard> {
@@ -93,18 +117,18 @@ export async function getDashboard(): Promise<Dashboard> {
 }
 
 export async function saveDashboard(dashboard: Dashboard): Promise<void> {
-  await writeStored(dashboardKey, dashboard);
+  await writeStored(dashboardKey, withoutSample(dashboard));
 }
 
 export async function createManualReel(reel: Reel): Promise<Dashboard> {
-  const dashboard = await getDashboard();
+  const dashboard = (await getStoredDashboard()) ?? emptyDashboard;
   const updated = { ...dashboard, reels: [reel, ...dashboard.reels] };
   await saveDashboard(updated);
   return updated;
 }
 
 export async function addDeadline(deadline: Deadline): Promise<Dashboard> {
-  const dashboard = await getDashboard();
+  const dashboard = (await getStoredDashboard()) ?? emptyDashboard;
   const updated = { ...dashboard, deadlines: [...dashboard.deadlines, deadline] };
   await saveDashboard(updated);
   return updated;
@@ -123,7 +147,7 @@ export async function mergeInstagramReels(reels: Reel[]): Promise<Dashboard> {
   const retained = (stored?.reels ?? []).filter((reel) => !incoming.has(reel.id));
   const merged = [...reels, ...retained].sort((a, b) => +new Date(b.postedAt) - +new Date(a.postedAt));
   const updated = {
-    ...(stored ?? sampleDashboard),
+    ...(stored ?? emptyDashboard),
     reels: merged,
     lastSyncedAt: new Date().toISOString(),
   };
