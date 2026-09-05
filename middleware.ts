@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { authConfigured, authRequired, isValidSession, sessionCookieName } from "@/lib/auth";
 
 // Everything except the sign-in page, the endpoints it posts to, and static assets.
+// Image files are matched by extension because the icon conventions and anything
+// under public/ are served from the root: gating those turns a favicon request
+// into a redirect to /login, and the browser gets HTML where it wanted a PNG.
+// Nothing user-specific is served this way, only the app's own artwork.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|login|api/auth/).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|login|api/auth/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|avif|woff2?)$).*)",
+  ],
 };
 
 export async function middleware(request: NextRequest) {
