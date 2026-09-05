@@ -257,7 +257,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="wordmark"><span>R</span><strong>Reel Rhythm</strong></div>
+        <div className="wordmark"><img src="/logo.png" alt="" /><strong>Reel Rhythm</strong></div>
         <nav aria-label="Primary navigation">
           <a className="nav-item active" href="#calendar"><i>▦</i> Calendar</a>
           <a className="nav-item" href="#reel-detail"><i>◫</i> Reel library</a>

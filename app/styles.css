@@ -27,7 +27,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .app-shell { min-height: 100vh; display: flex; }
 .sidebar { position: fixed; z-index: 2; display: flex; flex-direction: column; width: var(--sidebar-width); min-height: 100vh; padding: 29px 16px 20px; background: oklch(27% 0.023 163); color: oklch(91% 0.015 110); }
 .wordmark { display: flex; align-items: center; gap: 10px; padding: 0 9px; letter-spacing: -0.025em; }
-.wordmark span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--moss); color: var(--pine-deep); font-family: Georgia, serif; font-size: 17px; font-style: italic; }
+.wordmark img { width: 28px; height: 28px; object-fit: contain; }
 .wordmark strong { font-size: 16px; font-weight: 650; }
 .sidebar nav { display: grid; gap: 4px; margin-top: 54px; }
 .nav-item { display: flex; align-items: center; gap: 11px; padding: 10px 11px; border-radius: 8px; color: oklch(73% 0.014 160); font-size: 14px; text-decoration: none; transition: background-color 180ms ease-out, color 180ms ease-out; }

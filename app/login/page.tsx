@@ -31,7 +31,7 @@ function SignInForm() {
 
   return (
     <form className="editor-form" onSubmit={signIn}>
-      <div className="wordmark"><span>R</span><strong>Reel Rhythm</strong></div>
+      <div className="wordmark"><img src="/logo.png" alt="" /><strong>Reel Rhythm</strong></div>
       <p className="eyebrow">Private tracker</p>
       <h2>Your publishing log, for your eyes.</h2>
       <label>
